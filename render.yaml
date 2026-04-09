@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: geotrack-uz
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: node server.js
+    plan: free
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false   # set manually in Render dashboard
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GPS_TCP_PORT
+        value: 5000
+      - key: SIMULATE_GPS
+        value: true
+      - key: ESKIZ_EMAIL
+        sync: false
+      - key: ESKIZ_PASSWORD
+        sync: false
+      - key: ESKIZ_FROM
+        value: "4546"

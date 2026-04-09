@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GeoTrack UZ — GPS Worker Tracking</title>
+  <meta name="description" content="Real-time GPS worker tracking dashboard for field teams in Uzbekistan">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+    rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Socket.IO client — served by backend -->
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="auth.js"></script>
+</head>
+
+<!-- ═══════════ LOGIN SCREEN ═══════════ -->
+<div id="login-screen" style="display:none;">
+  <div class="login-card">
+    <div class="login-logo">
+      <span class="logo-dot" style="width:18px;height:18px;"></span>
+      GeoTrack <span style="color:var(--text3);font-weight:400">UZ</span>
+    </div>
+    <div class="login-title">Welcome back</div>
+    <div class="login-subtitle">Sign in to your dispatcher dashboard</div>
+    <div id="login-error" class="login-error" style="display:none;"></div>
+    <form style="display:flex;flex-direction:column;gap:16px;margin-top:16px"
+      onsubmit="event.preventDefault();attemptLogin(document.getElementById('login-username').value,document.getElementById('login-pass').value)">
+      <div class="form-group" style="margin-bottom:14px">
+        <label class="form-label">Username</label>
+        <div style="position:relative;margin-top:6px">
+          <i data-lucide="user" class="search-icon" style="top:50%;transform:translateY(-50%)"></i>
+          <input id="login-username" type="text" class="search-input" placeholder="admin" required
+            autocomplete="username" style="padding-left:36px;width:100%;height:42px;">
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:20px">
+        <label class="form-label">Password</label>
+        <div class="search-wrap">
+          <span class="search-icon"><i data-lucide="lock" style="width:14px"></i></span>
+          <input id="login-pass" type="password" class="search-input" placeholder="••••••••" required
+            autocomplete="current-password" style="padding-left:36px;width:100%;height:42px;">
+        </div>
+      </div>
+      <button id="login-btn" type="submit" class="btn btn-primary"
+        style="width:100%;height:44px;font-size:15px;justify-content:center;"><i data-lucide="log-in"
+          class="btn-icon"></i> Sign In</button>
+    </form>
+    <div class="login-hint">
+      <i data-lucide="info" style="width:13px;vertical-align:middle"></i>
+      Default — Admin: <code>admin</code> / <code>admin123</code>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ APP WRAPPER ═══════════ -->
+<div id="app-wrapper" style="display:none;">
+  <!-- ═══════════ TOP NAVIGATION ═══════════ -->
+  <nav class="nav" id="topNav">
+    <div class="nav-logo"><span class="logo-dot"></span>GeoTrack <span
+        style="color:var(--text3);font-weight:400;font-size:13px">UZ</span></div>
+    <div class="nav-links">
+      <button class="nav-btn active" onclick="showPage('dashboard')" id="nb-dashboard"><i data-lucide="layout-dashboard"
+          class="nav-icon"></i> Dashboard</button>
+      <button class="nav-btn" onclick="showPage('workers')" id="nb-workers"><i data-lucide="users" class="nav-icon"></i>
+        Workers</button>
+      <button class="nav-btn" onclick="showPage('zones')" id="nb-zones"><i data-lucide="map-pin" class="nav-icon"></i>
+        Zones</button>
+      <button class="nav-btn" onclick="showPage('alerts')" id="nb-alerts"><i data-lucide="bell" class="nav-icon"></i>
+        Alerts <span class="nav-badge" id="alert-badge">0</span></button>
+      <button class="nav-btn" onclick="showPage('history')" id="nb-history"><i data-lucide="history"
+          class="nav-icon"></i> Route History</button>
+      <button class="nav-btn" onclick="showPage('analytics')" id="nb-analytics"><i data-lucide="bar-chart-2"
+          class="nav-icon"></i> Analytics</button>
+      <button class="nav-btn" onclick="showPage('shifts')" id="nb-shifts"><i data-lucide="clock" class="nav-icon"></i>
+        Shifts</button>
+      <button class="nav-btn" onclick="showPage('settings')" id="nb-settings"><i data-lucide="settings"
+          class="nav-icon"></i> Settings</button>
+    </div>
+    <div class="nav-right">
+      <div class="status-ind"><span class="status-dot"></span><span id="online-count">0</span> Online</div>
+      <div id="nav-user-pill" style="display:flex;align-items:center;gap:8px"></div>
+      <div class="icon-btn" onclick="showPage('alerts')" title="Alerts"><i data-lucide="bell" style="width:18px"></i>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══════════ MAIN CONTENT ═══════════ -->
+  <div class="main">
+
+    <!-- ─── DASHBOARD ─── -->
+    <div class="page active" id="page-dashboard">
+      <div class="map-container">
+        <div id="map"></div>
+        <div class="map-overlay-info">
+          <div class="row">
+            <div class="map-stat">
+              <div class="val" id="m-online">0</div>
+              <div class="lbl">Online</div>
+            </div>
+            <div class="map-stat">
+              <div class="val" id="m-breach" style="color:var(--danger)">0</div>
+              <div class="lbl">Breach</div>
+            </div>
+            <div class="map-stat">
+              <div class="val" id="m-zones">0</div>
+              <div class="lbl">Zones</div>
+            </div>
+            <div class="map-stat">
+              <div class="val" id="m-speed">0</div>
+              <div class="lbl">Avg km/h</div>
+            </div>
+          </div>
+        </div>
+        <div class="map-controls">
+          <button class="map-toggle" id="toggle-draw" onclick="startDrawZone()"><i data-lucide="map-pin"
+              style="width:14px;display:inline-block;vertical-align:middle;margin-right:4px"></i> Draw Zone</button>
+          <button class="map-toggle on" id="toggle-trails" onclick="toggleMapLayer('trails')">🛤 Trails</button>
+          <button class="map-toggle on" id="toggle-zones" onclick="toggleMapLayer('zones')">⬡ Zones</button>
+          <button class="map-toggle on" id="toggle-labels" onclick="toggleMapLayer('labels')">🏷 Labels</button>
+        </div>
+        <!-- Worker Detail Card -->
+        <div class="worker-detail-card" id="workerDetailCard">
+          <div class="wdc-header">
+            <div class="wdc-avatar" id="wdc-avatar"></div>
+            <div>
+              <div class="wdc-name" id="wdc-name"></div>
+              <div class="wdc-role" id="wdc-role"></div>
+            </div>
+            <button class="wdc-close" onclick="closeDetailCard()">✕</button>
+          </div>
+          <div class="wdc-grid">
+            <div class="wdc-stat">
+              <div class="val" id="wdc-speed"></div>
+              <div class="lbl">km/h</div>
+            </div>
+            <div class="wdc-stat">
+              <div class="val" id="wdc-battery"></div>
+              <div class="battery-bar">
+                <div class="battery-fill" id="wdc-bat-fill"></div>
+              </div>
+            </div>
+            <div class="wdc-stat">
+              <div class="val" id="wdc-status"></div>
+              <div class="lbl">Status</div>
+            </div>
+            <div class="wdc-stat">
+              <div class="val" id="wdc-zone" style="font-size:10px;line-height:1.3"></div>
+              <div class="lbl">Zone</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-primary btn-sm" onclick="goHistory()">📼 History</button>
+            <button class="btn btn-secondary btn-sm" onclick="closeDetailCard()">Close</button>
+          </div>
+        </div>
+      </div>
+      <div class="dash-sidebar">
+        <div class="sidebar-header">
+          <h3><i data-lucide="zap" style="display:inline;width:16px;vertical-align:middle;margin-right:2px"></i> Live
+            Events</h3>
+          <span class="badge badge-info" id="event-count">0</span>
+        </div>
+        <div class="event-log" id="eventLog"></div>
+      </div>
+    </div>
+
+    <!-- ─── WORKERS ─── -->
+    <div class="page" id="page-workers">
+      <div class="page-content">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Workers</div>
+            <div class="page-subtitle">Manage and monitor all field workers</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-secondary" onclick="exportCSV()"><i data-lucide="download" class="btn-icon"></i>
+              Export CSV</button>
+            <button class="btn btn-primary" onclick="openAddWorker()"><i data-lucide="user-plus" class="btn-icon"></i>
+              Add Worker</button>
+          </div>
+        </div>
+        <div class="toolbar" style="margin-bottom:16px; display:flex; gap:16px; align-items:center;">
+          <div class="search-wrap" style="width:250px">
+            <span class="search-icon"><i data-lucide="search" style="width:14px"></i></span>
+            <input class="search-input" id="workerSearch" placeholder="Search workers…" oninput="renderWorkerTable()">
+          </div>
+          <div class="zone-filter-bar" id="workerZoneFilter"></div>
+        </div>
+        <div class="card">
+          <div class="data-table-wrap">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Worker</th>
+                  <th>Zone</th>
+                  <th>Status</th>
+                  <th>Coordinates</th>
+                  <th>Speed</th>
+                  <th>Battery</th>
+                  <th>Last Seen</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="workerTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── ZONES ─── -->
+    <div class="page" id="page-zones">
+      <div class="page-content">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Monitoring Zones</div>
+            <div class="page-subtitle">Track worker activity within each designated zone</div>
+          </div>
+          <button class="btn btn-primary" onclick="openAddZone()"><i data-lucide="map-pin" class="btn-icon"></i> Add
+            Zone</button>
+        </div>
+        <div id="breachBanner" class="breach-banner">
+          <span class="breach-banner-icon"><i data-lucide="alert-triangle" style="width:18px"></i></span>
+          <span class="breach-banner-text" id="breachBannerText">Zone breach detected!</span>
+        </div>
+        <div class="toolbar" style="margin-bottom:16px; display:flex; gap:16px; align-items:center;">
+          <div class="search-wrap" style="width:250px">
+            <span class="search-icon"><i data-lucide="search" style="width:14px"></i></span>
+            <input class="search-input" id="zoneSearch" placeholder="Search zones…" oninput="renderZones()">
+          </div>
+          <div class="zone-filter-bar" style="margin-top:0">
+            <button class="filter-btn active" onclick="setZoneFilter('all',this)">All</button>
+            <button class="filter-btn" onclick="setZoneFilter('online',this)">Online</button>
+            <button class="filter-btn" onclick="setZoneFilter('breach',this)">Breach</button>
+          </div>
+        </div>
+        <div class="zones-grid" id="zonesGrid"></div>
+      </div>
+    </div>
+
+    <!-- ─── ALERTS ─── -->
+    <div class="page" id="page-alerts">
+      <div class="page-content">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Alert History</div>
+            <div class="page-subtitle">All breach, return and system events</div>
+          </div>
+          <button class="btn btn-secondary" onclick="clearAlerts()"><i data-lucide="trash-2" class="btn-icon"></i> Clear
+            All</button>
+        </div>
+        <div class="alert-filter-bar">
+          <button class="filter-btn active" onclick="setAlertFilter('all',this)">All</button>
+          <button class="filter-btn" onclick="setAlertFilter('breach',this)"><i data-lucide="alert-triangle"
+              style="width:14px;display:inline-block;vertical-align:bottom"></i> Breach</button>
+          <button class="filter-btn" onclick="setAlertFilter('return',this)"><i data-lucide="corner-down-left"
+              style="width:14px;display:inline-block;vertical-align:bottom"></i> Return</button>
+          <button class="filter-btn" onclick="setAlertFilter('battery',this)"><i data-lucide="battery-warning"
+              style="width:14px;display:inline-block;vertical-align:bottom"></i> Battery</button>
+          <button class="filter-btn" onclick="setAlertFilter('info',this)"><i data-lucide="info"
+              style="width:14px;display:inline-block;vertical-align:bottom"></i> Info</button>
+        </div>
+        <div class="alerts-list" id="alertsList"></div>
+      </div>
+    </div>
+
+    <!-- ─── ROUTE HISTORY ─── -->
+    <div class="page" id="page-history">
+      <div id="history-selector" class="page-content" style="display:block;">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Route History</div>
+            <div class="page-subtitle">Select a worker to precisely replay their GPS tracking path</div>
+          </div>
+        </div>
+        <div class="zones-grid" id="historyWorkerGrid"></div>
+      </div>
+      <div id="history-player" class="history-layout" style="display:none;">
+        <div class="history-map-area">
+          <div id="history-map"></div>
+          <div class="history-controls">
+            <div class="history-toolbar">
+              <button class="btn btn-secondary" onclick="closeHistoryPlayer()" style="margin-right:auto"><i
+                  data-lucide="arrow-left" class="btn-icon"></i> Back</button>
+              <select class="form-select" id="historyWorkerSel" style="display:none;" onchange="loadHistory()"></select>
+              <input type="date" class="form-input" id="historyDate" style="width:150px" onchange="loadHistory()">
+              <div class="playback-controls">
+                <button class="play-btn" id="playBtn" onclick="togglePlayback()">▶</button>
+                <div class="speed-btns">
+                  <button class="speed-btn active" onclick="setSpeed(1,this)">1×</button>
+                  <button class="speed-btn" onclick="setSpeed(2,this)">2×</button>
+                  <button class="speed-btn" onclick="setSpeed(4,this)">4×</button>
+                </div>
+              </div>
+              <span style="font-size:12px;color:var(--text3)" id="historyTimeLabel">00:00:00</span>
+            </div>
+            <div class="timeline-wrap">
+              <input type="range" class="timeline-slider" id="timelineSlider" min="0" max="199" value="0"
+                oninput="scrubTo(this.value)">
+            </div>
+            <div class="history-stats" style="margin-top:10px">
+              <div class="history-stat">
+                <div class="val" id="h-dist">0.0 km</div>
+                <div class="lbl">Distance</div>
+              </div>
+              <div class="history-stat">
+                <div class="val" id="h-dur">00:00</div>
+                <div class="lbl">Duration</div>
+              </div>
+              <div class="history-stat">
+                <div class="val" id="h-speed">0 km/h</div>
+                <div class="lbl">Avg Speed</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="history-sidebar">
+          <div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:10px">📌 Breach Events</div>
+            <div class="event-chips" id="historyEventChips"></div>
+          </div>
+          <div style="margin-top:auto">
+            <div class="history-stat" style="text-align:left;padding:10px">
+              <div class="val" style="color:var(--danger)" id="h-breaches">0</div>
+              <div class="lbl">Breach Events on Route</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── ANALYTICS ─── -->
+    <div class="page" id="page-analytics">
+      <div class="page-content">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Analytics</div>
+            <div class="page-subtitle">Performance metrics and zone intelligence</div>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <div class="period-selector">
+              <button class="period-btn active" onclick="setPeriod('today',this)">Today</button>
+              <button class="period-btn" onclick="setPeriod('week',this)">This Week</button>
+              <button class="period-btn" onclick="setPeriod('month',this)">This Month</button>
+            </div>
+            <button class="btn btn-secondary" onclick="exportAnalytics()">⬇ Export</button>
+          </div>
+        </div>
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-icon">👷</div>
+            <div class="kpi-val" id="kpi-total">0</div>
+            <div class="kpi-label">Total Workers</div>
+            <div class="kpi-change up" id="kpi-total-ch"></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🟢</div>
+            <div class="kpi-val" id="kpi-online">0</div>
+            <div class="kpi-label">Online Now</div>
+            <div class="kpi-change" id="kpi-online-ch"></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">🚨</div>
+            <div class="kpi-val" id="kpi-breaches">0</div>
+            <div class="kpi-label">Breach Events</div>
+            <div class="kpi-change down" id="kpi-breach-ch"></div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-icon">📏</div>
+            <div class="kpi-val" id="kpi-dist">0 km</div>
+            <div class="kpi-label">Distance Traveled</div>
+            <div class="kpi-change up" id="kpi-dist-ch"></div>
+          </div>
+        </div>
+        <div class="analytics-grid">
+          <div class="card chart-card">
+            <div class="chart-title">Breach Events by Day</div>
+            <div class="chart-wrap" style="height:180px"><canvas id="chartBreaches"></canvas></div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-title">Avg Speed per Zone (km/h)</div>
+            <div class="chart-wrap" style="height:180px"><canvas id="chartSpeed"></canvas></div>
+          </div>
+        </div>
+        <div class="analytics-grid">
+          <div class="card chart-card" style="grid-column:1/-1">
+            <div class="chart-title">Worker Performance</div>
+            <table class="perf-table">
+              <thead>
+                <tr>
+                  <th>Worker</th>
+                  <th>Distance</th>
+                  <th>Uptime</th>
+                  <th>Breaches</th>
+                  <th>Compliance</th>
+                </tr>
+              </thead>
+              <tbody id="perfTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="analytics-grid">
+          <div class="card chart-card">
+            <div class="chart-title">Zone Breach Heatmap</div>
+            <div id="zoneHeatmap"></div>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-title">Worker Status Distribution</div>
+            <div class="donut-wrap">
+              <div style="width:160px;height:160px"><canvas id="chartDonut"></canvas></div>
+              <div class="donut-legend" id="donutLegend"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── SHIFTS ─── -->
+    <div class="page" id="page-shifts">
+      <div class="page-content">
+        <div class="page-header">
+          <div>
+            <div class="page-title">Shift Management</div>
+            <div class="page-subtitle">Track worker shifts and durations</div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-danger" onclick="endAllShifts()"><i data-lucide="square" class="btn-icon"></i> End
+              All Shifts</button>
+            <button class="btn btn-primary" onclick="startAllShifts()"><i data-lucide="play" class="btn-icon"></i> Start
+              All Shifts</button>
+          </div>
+        </div>
+        <div class="shifts-grid" id="shiftsGrid"></div>
+        <div class="page-title" style="font-size:16px;margin-bottom:12px">Shift Log</div>
+        <div class="card">
+          <table class="shift-log-table">
+            <thead>
+              <tr>
+                <th>Worker</th>
+                <th>Start</th>
+                <th>End</th>
+                <th>Duration</th>
+                <th>Zone</th>
+                <th>Breaches</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="shiftLogBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── SETTINGS ─── -->
+    <div class="page" id="page-settings">
+      <div class="page-content">
+        <div class="page-header">
+          <div class="page-title">Settings</div>
+        </div>
+        <div class="settings-layout">
+          <div class="settings-nav" id="settingsNav">
+            <div class="settings-nav-item active" onclick="showSettingsSection('general',this)"><span
+                class="icon">🏢</span>General</div>
+            <div class="settings-nav-item" onclick="showSettingsSection('api',this)"><i data-lucide="key"
+                class="icon"></i>API
+              Keys</div>
+            <div class="settings-nav-item" onclick="showSettingsSection('sms',this)"><i data-lucide="smartphone"
+                class="icon"></i>SMS
+              Alerts</div>
+            <div class="settings-nav-item" onclick="showSettingsSection('notif',this)"><span
+                class="icon">🔔</span>Notifications</div>
+            <div class="settings-nav-item" onclick="showSettingsSection('gps',this)"><i data-lucide="satellite"
+                class="icon"></i>GPS
+              Tracking</div>
+            <div class="settings-nav-item" onclick="showSettingsSection('zones',this)"><i data-lucide="map-pin"
+                class="icon"></i>Zone
+              Config</div>
+            <div class="settings-nav-item" onclick="showSettingsSection('team',this)"><i data-lucide="users"
+                class="icon"></i>Team &
+              Access</div>
+            <div id="settings-user-mgmt" class="settings-nav-item" onclick="showSettingsSection('users',this)"><i
+                data-lucide="shield-check" class="icon"></i>System Users</div>
+            <div class="settings-nav-item" onclick="showSettingsSection('data',this)"><i data-lucide="archive"
+                class="icon"></i>Data &
+              Privacy</div>
+          </div>
+          <div id="settingsContent"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+
+  <!-- ═══════════ MODALS ═══════════ -->
+  <div class="modal-overlay" id="modalOverlay" onclick="closeModal()"></div>
+  <div class="modal" id="addWorkerModal">
+    <div class="modal-header"><span class="modal-title">Add Worker</span><button class="wdc-close"
+        onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="aw-name"
+        placeholder="Alisher Nazarov"></div>
+    <div class="form-row" style="margin-top:10px">
+      <div class="form-group"><label class="form-label">Role</label><input class="form-input" id="aw-role"
+          placeholder="Field Agent"></div>
+      <div class="form-group"><label class="form-label">Phone</label><input class="form-input" id="aw-phone"
+          placeholder="+998901234567"></div>
+      <div class="form-group"><label class="form-label">Assign to Zone</label>
+        <select class="form-select" id="aw-zone"></select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addWorker()">Add Worker</button>
+    </div>
+  </div>
+
+  <div class="modal" id="editLocationModal">
+    <div class="modal-header"><span class="modal-title">Edit Worker Location</span><button class="wdc-close"
+        onclick="closeModal()">✕</button></div>
+    <input type="hidden" id="el-worker-id">
+    <div class="form-row" style="margin-top:10px">
+      <div class="form-group"><label class="form-label">Latitude</label><input class="form-input" id="el-lat"
+          type="number" step="any" placeholder="41.299"></div>
+      <div class="form-group"><label class="form-label">Longitude</label><input class="form-input" id="el-lng"
+          type="number" step="any" placeholder="69.240"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditLocation()">Update GPS</button>
+    </div>
+  </div>
+
+
+  <!-- Edit Phone Modal -->
+  <div class="modal" id="editPhoneModal">
+    <div class="modal-header"><span class="modal-title">Edit Phone Number</span><button class="wdc-close"
+        onclick="closeModal()">✕</button></div>
+    <input type="hidden" id="ep-worker-id">
+    <div class="form-group" style="margin-top:12px">
+      <label class="form-label">Worker</label>
+      <div id="ep-worker-name" style="font-weight:600;font-size:14px;padding:4px 0;color:var(--text1)"></div>
+    </div>
+    <div class="form-group" style="margin-top:10px">
+      <label class="form-label">Phone Number</label>
+      <input class="form-input" id="ep-phone" type="tel" placeholder="+998901234567">
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitEditPhone()">Save Phone</button>
+    </div>
+  </div>
+
+  <!-- Assign Zone Modal -->
+
+  <div class="modal" id="assignZoneModal">
+    <div class="modal-header"><span class="modal-title">Assign Worker to Zone</span><button class="wdc-close"
+        onclick="closeModal()">✕</button></div>
+    <input type="hidden" id="az-worker-id">
+    <div class="form-group" style="margin-top:12px">
+      <label class="form-label">Worker</label>
+      <div id="az-worker-name" style="font-weight:600;font-size:14px;padding:6px 0;color:var(--text1)"></div>
+    </div>
+    <div class="form-group" style="margin-top:10px">
+      <label class="form-label">Select Zone</label>
+      <select class="form-input" id="az-zone-sel" style="cursor:pointer">
+        <option value="">— No Zone —</option>
+      </select>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAssignZone()">Save Zone</button>
+    </div>
+  </div>
+
+  <div class="modal" id="addZoneModal">
+    <div class="modal-header"><span class="modal-title">Add Zone</span><button class="wdc-close"
+        onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label class="form-label">Zone Name</label><input class="form-input" id="az-name"
+        placeholder="Zone Name"></div>
+    <div class="form-row" style="margin-top:10px">
+      <div class="form-group"><label class="form-label">Center Lat</label><input class="form-input" id="az-lat"
+          placeholder="41.29"></div>
+      <div class="form-group"><label class="form-label">Center Lng</label><input class="form-input" id="az-lng"
+          placeholder="69.24"></div>
+      <div class="form-group"><label class="form-label">Radius (m)</label><input class="form-input" id="az-rad"
+          placeholder="500"></div>
+    </div>
+    <div class="form-group" style="margin-top:10px"><label class="form-label">Color</label>
+      <div style="display:flex;gap:8px;margin-top:6px" id="colorPicker">
+        <div class="color-swatch selected" style="background:#22d3ee" data-color="#22d3ee" onclick="selectColor(this)">
+        </div>
+        <div class="color-swatch" style="background:#a855f7" data-color="#a855f7" onclick="selectColor(this)"></div>
+        <div class="color-swatch" style="background:#22c55e" data-color="#22c55e" onclick="selectColor(this)"></div>
+        <div class="color-swatch" style="background:#f97316" data-color="#f97316" onclick="selectColor(this)"></div>
+        <div class="color-swatch" style="background:#ec4899" data-color="#ec4899" onclick="selectColor(this)"></div>
+        <div class="color-swatch" style="background:#eab308" data-color="#eab308" onclick="selectColor(this)"></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="addZone()">Add Zone</button>
+    </div>
+  </div>
+
+  <div class="modal" id="addUserModal">
+    <div class="modal-header"><span class="modal-title">Add System User</span><button class="wdc-close"
+        onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="au-name"
+        placeholder="Dilnoza Yusupova"></div>
+    <div class="form-row" style="margin-top:10px">
+      <div class="form-group"><label class="form-label">Username</label><input class="form-input" id="au-username"
+          type="text" placeholder="dilnoza"></div>
+    </div>
+    <div class="form-row" style="margin-top:10px">
+      <div class="form-group"><label class="form-label">Password</label><input class="form-input" id="au-pass"
+          type="password" placeholder="••••••••"></div>
+      <div class="form-group"><label class="form-label">Role</label>
+        <select class="form-select" id="au-role">
+          <option value="dispatcher">Dispatcher</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitAddUser()">Create User</button>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="data.js"></script>
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+  <script src="map.js"></script>
+  <script src="pages.js"></script>
+  <script>
+    lucide.createIcons();
+    setInterval(() => lucide.createIcons(), 1000);
+  </script>
+</div><!-- end #app-wrapper -->
+<script>
+  // Boot auth after all scripts loaded
+  window.addEventListener('DOMContentLoaded', () => { bootAuth(); });
+  // Also trigger if DOM already ready
+  if (document.readyState !== 'loading') bootAuth();
+</script>
+</body>
+
+</html>
