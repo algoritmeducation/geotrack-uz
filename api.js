@@ -1,7 +1,9 @@
 // ============================================================
 //  GeoTrack UZ — Frontend API & Socket.IO Client
 // ============================================================
-const API_BASE = (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001') + '/api';
+// Explicitly point to the Render backend (since frontend is on Vercel)
+const BACKEND_URL = 'https://geotrack-uz.onrender.com';
+const API_BASE = BACKEND_URL + '/api';
 
 // ── REST Helpers ─────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
@@ -28,7 +30,8 @@ function connectSocket() {
         console.warn('Socket.IO not loaded — falling back to polling');
         return;
     }
-    socket = io({ transports: ['websocket', 'polling'] });
+    // Connect to the explicit Render backend
+    socket = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
 
     socket.on('connect', () => {
         console.log('✅ Connected to GeoTrack server');
