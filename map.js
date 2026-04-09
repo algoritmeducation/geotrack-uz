@@ -46,7 +46,8 @@ function initMap() {
     updateDashStats();
 }
 
-function startDrawZone() {
+function startDrawZone(e) {
+    if (e) e.stopPropagation();
     isDrawingZone = true;
     document.getElementById('map').style.cursor = 'crosshair';
     document.getElementById('toggle-draw').classList.add('on');
