@@ -124,9 +124,34 @@ function openModal(id) {
     document.getElementById('modalOverlay').classList.add('show');
     document.getElementById(id).classList.add('show');
 }
+function askConfirm(title, msg, btnText = 'Confirm') {
+    return new Promise((resolve) => {
+        document.getElementById('cm-title').innerText = title;
+        document.getElementById('cm-msg').innerText = msg;
+        document.getElementById('cm-btn').innerText = btnText;
+        window._resolveConfirm = resolve;
+        document.getElementById('modalOverlay').classList.add('show');
+        document.getElementById('confirmModal').classList.add('show');
+    });
+}
+function executeConfirm() {
+    if (window._resolveConfirm) {
+        let resolve = window._resolveConfirm;
+        window._resolveConfirm = null;
+        resolve(true);
+    }
+    document.getElementById('confirmModal').classList.remove('show');
+    if (!document.querySelectorAll('.modal.show:not(#confirmModal)').length) {
+        document.getElementById('modalOverlay').classList.remove('show');
+    }
+}
 function closeModal() {
+    if (window._resolveConfirm) {
+        window._resolveConfirm(false);
+        window._resolveConfirm = null;
+    }
+    document.querySelectorAll('.modal.show').forEach(m => m.classList.remove('show'));
     document.getElementById('modalOverlay').classList.remove('show');
-    document.querySelectorAll('.modal').forEach(m => m.classList.remove('show'));
 }
 
 // ── Add Worker (via API) ──────────────────────────────────
@@ -155,7 +180,7 @@ async function addWorker() {
 
 async function removeWorker(id) {
     const w = getWorker(id);
-    if (!confirm(`Are you sure you want to permanently delete the worker "${w?.name || id}"?`)) return;
+    if (!await askConfirm("Delete Worker", `Are you sure you want to permanently delete the worker "${w?.name || id}"?`, "Delete")) return;
     try {
         await apiRemoveWorker(id);
         showToast(`Removed ${w?.name || id}`, 'info');

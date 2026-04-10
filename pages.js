@@ -728,7 +728,7 @@ async function renderUsersPanel() {
 }
 
 async function deleteUserById(id) {
-  if (!confirm('Delete this user account?')) return;
+  if (!await askConfirm('Delete User', 'Delete this user account?', 'Delete')) return;
   try {
     await deleteSystemUser(id);
     showToast('User deleted', 'info');
@@ -773,7 +773,7 @@ function testYandexKey() {
 
 async function removeZone(id) {
   const z = getZone(id);
-  if (!confirm(`Are you sure you want to permanently delete the zone "${z?.name}"?`)) return;
+  if (!await askConfirm('Delete Zone', `Are you sure you want to permanently delete the zone "${z?.name}"?`, 'Delete')) return;
   try {
     const res = await apiRemoveZone(id);
     if (!res) throw new Error('API failed');
