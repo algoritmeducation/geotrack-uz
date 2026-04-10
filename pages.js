@@ -749,10 +749,17 @@ function testYandexKey() {
   showToast('Testing Yandex key… (connect backend to validate)', 'info');
 }
 
-function removeZone(id) {
+async function removeZone(id) {
   const z = getZone(id);
-  zones = zones.filter(x => x.id !== id);
-  if (zoneCircleMap[id] && mainMap) { mainMap.removeLayer(zoneCircleMap[id]); delete zoneCircleMap[id]; }
-  showToast(`Zone "${z?.name}" removed`, 'info');
-  renderSettings();
+  try {
+    const res = await apiRemoveZone(id);
+    if (!res) throw new Error('API failed');
+    zones = zones.filter(x => x.id !== id);
+    if (zoneCircleMap[id] && mainMap) { mainMap.removeLayer(zoneCircleMap[id]); delete zoneCircleMap[id]; }
+    showToast(`Zone "${z?.name}" removed`, 'info');
+    renderSettings();
+    if (state.currentPage === 'zones') renderZones();
+  } catch (e) {
+    showToast('Failed to remove zone', 'breach');
+  }
 }
