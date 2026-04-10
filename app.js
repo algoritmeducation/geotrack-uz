@@ -137,6 +137,7 @@ function openAddWorker() {
 }
 
 async function addWorker() {
+    const id = document.getElementById('aw-id').value.trim();
     const name = document.getElementById('aw-name').value.trim();
     const role = document.getElementById('aw-role').value.trim();
     const phone = document.getElementById('aw-phone').value.trim();
@@ -144,7 +145,7 @@ async function addWorker() {
     if (!name) { showToast('Please enter worker name', 'breach'); return; }
     try {
         const w = await apiAddWorker({
-            name, role: role || 'Field Agent', phone, zone: zoneId,
+            id, name, role: role || 'Field Agent', phone, zone: zoneId,
             color: COLORS[workers.length % COLORS.length]
         });
         closeModal();

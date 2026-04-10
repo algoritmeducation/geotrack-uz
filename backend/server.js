@@ -43,11 +43,13 @@ const db = (fn) => state.dbAvailable ? fn() : Promise.resolve();
 app.get('/api/workers', (_req, res) => res.json(state.workers));
 
 app.post('/api/workers', async (req, res) => {
-    const { name, role, phone, zone, color } = req.body;
+    const { id, name, role, phone, zone, color } = req.body;
     if (!name) return res.status(400).json({ error: 'Name required' });
+    const finalId = id && id.trim() ? id.trim() : ('w' + Date.now());
+    if (state.workers.find(w => w.id === finalId)) return res.status(400).json({ error: 'ID already exists' });
     const z = state.zones.find(z => z.id === zone) || state.zones[0];
     const w = {
-        id: 'w' + Date.now(), name, role: role || 'Field Agent', phone: phone || '',
+        id: finalId, name, role: role || 'Field Agent', phone: phone || '',
         zone: z ? z.id : '', color: color || '#1d4ed8',
         lat: z ? z.center[0] + (Math.random() - .5) * .003 : 0,
         lng: z ? z.center[1] + (Math.random() - .5) * .003 : 0,
