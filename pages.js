@@ -152,6 +152,7 @@ function renderZones() {
         <div class="zone-color-dot" style="background:${z.color}"></div>
         <div class="zone-name">${z.name}</div>
         ${breach ? `<span class="badge badge-breach" style="margin-left:auto">⚠ ${breach} Breach${breach > 1 ? 'es' : ''}</span>` : ''}
+        <button class="btn btn-danger btn-sm" style="padding:4px; margin-left:${breach ? '8px' : 'auto'};" onclick="removeZone('${z.id}')" title="Delete Zone"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
       </div>
       <div class="zone-stats">
         <div class="zone-stat"><div class="val">${zw.length}</div><div class="lbl">Workers</div></div>
