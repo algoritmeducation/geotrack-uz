@@ -159,9 +159,13 @@ function renderZones() {
         <div class="zone-stat"><div class="val" style="color:var(--success)">${online}</div><div class="lbl">Online</div></div>
         <div class="zone-stat"><div class="val" style="color:var(--danger)">${breach}</div><div class="lbl">Breach</div></div>
       </div>
-      <div class="worker-chips">${chips || '<span style="color:var(--text3);font-size:12px">No workers assigned</span>'}</div>
     </div>`;
   }).join('');
+
+  if (grid.dataset.html === html) return; // Prevent flickering and DOM destruction!
+  grid.dataset.html = html;
+
+  grid.innerHTML = html;
   if (window.lucide) window.lucide.createIcons();
 }
 
