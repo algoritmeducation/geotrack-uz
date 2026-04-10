@@ -46,6 +46,25 @@ function initMap() {
     updateDashStats();
 }
 
+function reinitMapMarkers() {
+    if (!mainMap) return;
+
+    // Remove existing
+    Object.values(markerMap).forEach(m => mainMap.removeLayer(m));
+    Object.values(trailMap).forEach(t => mainMap.removeLayer(t));
+    Object.values(zoneCircleMap).forEach(c => mainMap.removeLayer(c));
+
+    for (let k in markerMap) delete markerMap[k];
+    for (let k in trailMap) delete trailMap[k];
+    for (let k in zoneCircleMap) delete zoneCircleMap[k];
+
+    // Add new
+    zones.forEach(z => addZoneCircle(z));
+    workers.forEach(w => addMarker(w));
+
+    updateMapMarkers();
+}
+
 function startDrawZone(e) {
     if (e) e.stopPropagation();
     isDrawingZone = true;

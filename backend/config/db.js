@@ -10,6 +10,7 @@ async function connectDB() {
         console.log('✅ MongoDB connected:', uri);
         return true;
     } catch (err) {
+        console.error('Mongo connection error:', err);
         console.warn('⚠️  MongoDB not available — running in memory-only mode.');
         console.warn('   Start MongoDB or set MONGO_URI= to enable persistence.');
         return false;

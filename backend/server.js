@@ -1,6 +1,6 @@
 // ============================================================
 //  GeoTrack UZ — Main Server
-//  Express + Socket.IO + optional MongoDB
+//  Express + Socket.IO + MongoDB (Mongoose)
 // ============================================================
 require('dotenv').config();
 
@@ -16,6 +16,13 @@ const { startGpsServer } = require('./services/gpsServer');
 const { checkBreach } = require('./services/geofence');
 const eskiz = require('./services/eskiz');
 
+// ── Mongoose Models ─────────────────────────────────────────
+const Worker = require('./models/Worker');
+const Zone = require('./models/Zone');
+const Alert = require('./models/Alert');
+const Shift = require('./models/Shift');
+const User = require('./models/User');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE'] } });
@@ -27,61 +34,65 @@ app.use(express.json());
 // ── Serve frontend ─────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..')));
 
+// ── Helper: conditional DB persist ─────────────────────────
+const db = (fn) => state.dbAvailable ? fn() : Promise.resolve();
+
 // ── REST API Routes ─────────────────────────────────────────
 
 // Workers
 app.get('/api/workers', (_req, res) => res.json(state.workers));
 
-app.post('/api/workers', (req, res) => {
+app.post('/api/workers', async (req, res) => {
     const { name, role, phone, zone, color } = req.body;
     if (!name) return res.status(400).json({ error: 'Name required' });
     const z = state.zones.find(z => z.id === zone) || state.zones[0];
     const w = {
         id: 'w' + Date.now(), name, role: role || 'Field Agent', phone: phone || '',
-        zone: z.id, color: color || '#1d4ed8',
-        lat: z.center[0] + (Math.random() - .5) * .003,
-        lng: z.center[1] + (Math.random() - .5) * .003,
-        battery: 80 + Math.random() * 20, status: 'online',
+        zone: z ? z.id : '', color: color || '#1d4ed8',
+        lat: z ? z.center[0] + (Math.random() - .5) * .003 : 0,
+        lng: z ? z.center[1] + (Math.random() - .5) * .003 : 0,
+        battery: 80 + Math.random() * 20, status: 'offline',
         speed: 0, trail: [], breaching: false, distance: 0, uptime: 100, breachCount: 0,
     };
     state.workers.push(w);
+    await db(() => Worker.create(w));
     state.newAlert('info', w.id, w.zone, `${w.name} — Worker added to system`);
     io.emit('worker:added', w);
     io.emit('workers:update', state.workers);
     res.status(201).json(w);
 });
 
-app.put('/api/workers/:id', (req, res) => {
+app.put('/api/workers/:id', async (req, res) => {
     const w = state.workers.find(w => w.id === req.params.id);
     if (!w) return res.status(404).json({ error: 'Not found' });
     Object.assign(w, req.body);
+    await db(() => Worker.findOneAndUpdate({ id: req.params.id }, req.body, { new: true }));
     io.emit('workers:update', state.workers);
     res.json(w);
 });
 
-app.delete('/api/workers/:id', (req, res) => {
+app.delete('/api/workers/:id', async (req, res) => {
     const idx = state.workers.findIndex(w => w.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     const [w] = state.workers.splice(idx, 1);
+    await db(() => Worker.findOneAndDelete({ id: req.params.id }));
     io.emit('worker:removed', w.id);
     io.emit('workers:update', state.workers);
     res.json({ ok: true });
 });
 
-app.post('/api/workers/:id/location', (req, res) => {
+app.post('/api/workers/:id/location', async (req, res) => {
     const w = state.workers.find(w => w.id === req.params.id);
     if (!w) return res.status(404).json({ error: 'Not found' });
     const { lat, lng } = req.body;
     if (typeof lat !== 'number' || typeof lng !== 'number') {
         return res.status(400).json({ error: 'lat and lng must be numbers' });
     }
-    // Directly pin the worker to the new coordinates
-    w.lat = lat;
-    w.lng = lng;
-    w.speed = 0;
+    w.lat = lat; w.lng = lng; w.speed = 0;
     w.trail.push([lat, lng]);
     if (w.trail.length > 60) w.trail.shift();
     state.addLocation(w.id, lat, lng, 0);
+    await db(() => Worker.findOneAndUpdate({ id: w.id }, { lat, lng, trail: w.trail }));
     io.emit('workers:update', state.workers);
     res.json({ ok: true, id: w.id, lat, lng });
 });
@@ -89,19 +100,21 @@ app.post('/api/workers/:id/location', (req, res) => {
 // Zones
 app.get('/api/zones', (_req, res) => res.json(state.zones));
 
-app.post('/api/zones', (req, res) => {
+app.post('/api/zones', async (req, res) => {
     const { name, center, radius, color } = req.body;
     if (!name || !center) return res.status(400).json({ error: 'name and center required' });
     const z = { id: 'z' + Date.now(), name, center, radius: radius || 500, color: color || '#1d4ed8' };
     state.zones.push(z);
+    await db(() => Zone.create(z));
     io.emit('zone:added', z);
     res.status(201).json(z);
 });
 
-app.delete('/api/zones/:id', (req, res) => {
+app.delete('/api/zones/:id', async (req, res) => {
     const idx = state.zones.findIndex(z => z.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     const [z] = state.zones.splice(idx, 1);
+    await db(() => Zone.findOneAndDelete({ id: req.params.id }));
     io.emit('zone:removed', z.id);
     res.json({ ok: true });
 });
@@ -114,8 +127,9 @@ app.get('/api/alerts', (req, res) => {
     res.json(list.slice(0, parseInt(limit)));
 });
 
-app.delete('/api/alerts', (_req, res) => {
+app.delete('/api/alerts', async (_req, res) => {
     state.alerts.length = 0;
+    await db(() => Alert.deleteMany({}));
     io.emit('alerts:cleared');
     res.json({ ok: true });
 });
@@ -128,7 +142,7 @@ app.get('/api/locations/:workerId', (req, res) => {
 });
 
 // GPS push from mobile/PWA
-app.post('/api/locations/push', (req, res) => {
+app.post('/api/locations/push', async (req, res) => {
     const { workerId, lat, lng, speed, accuracy } = req.body;
     const w = state.workers.find(w => w.id === workerId);
     if (!w) return res.status(404).json({ error: 'Worker not found' });
@@ -136,6 +150,7 @@ app.post('/api/locations/push', (req, res) => {
     w.trail.push([lat, lng]);
     if (w.trail.length > 60) w.trail.shift();
     state.addLocation(workerId, lat, lng, speed || 0);
+    await db(() => Worker.findOneAndUpdate({ id: workerId }, { lat, lng, speed: speed || 0, trail: w.trail }));
     checkBreach(w, state.zones, io, state);
     io.emit('workers:update', state.workers);
     res.json({ ok: true });
@@ -144,7 +159,7 @@ app.post('/api/locations/push', (req, res) => {
 // Shifts
 app.get('/api/shifts', (_req, res) => res.json({ shifts: state.shifts, log: state.shiftLog }));
 
-app.post('/api/shifts/start', (req, res) => {
+app.post('/api/shifts/start', async (req, res) => {
     const { workerId } = req.body;
     const w = state.workers.find(w => w.id === workerId);
     if (!w) return res.status(404).json({ error: 'Not found' });
@@ -152,12 +167,17 @@ app.post('/api/shifts/start', (req, res) => {
     if (!sh) { sh = { workerId, active: false, startTime: null, breachCount: 0 }; state.shifts.push(sh); }
     const now = new Date();
     sh.active = true; sh.startTime = now.toISOString(); sh.breachCount = 0;
+    await db(() => Shift.findOneAndUpdate(
+        { workerId },
+        { workerId, active: true, startTime: sh.startTime, breachCount: 0 },
+        { upsert: true, new: true }
+    ));
     state.newAlert('info', workerId, w.zone, `${w.name} — Shift started`);
     io.emit('shift:started', sh);
     res.json(sh);
 });
 
-app.post('/api/shifts/end', (req, res) => {
+app.post('/api/shifts/end', async (req, res) => {
     const { workerId } = req.body;
     const sh = state.shifts.find(s => s.workerId === workerId);
     if (!sh || !sh.active) return res.status(400).json({ error: 'No active shift' });
@@ -169,6 +189,10 @@ app.post('/api/shifts/end', (req, res) => {
     const log = { workerId, start: sh.startTime, end: end.toISOString(), duration: `${hh}:${mm}`, zone: w?.zone || '', breaches: sh.breachCount };
     state.shiftLog.unshift(log);
     sh.active = false; sh.startTime = null;
+    await db(() => Shift.findOneAndUpdate(
+        { workerId },
+        { active: false, startTime: null, $push: { log: { $each: [log], $position: 0 } } }
+    ));
     state.newAlert('info', workerId, w?.zone || '', `${w?.name} — Shift ended (${hh}h ${mm}m)`);
     io.emit('shift:ended', { sh, log });
     res.json(log);
@@ -187,16 +211,17 @@ app.get('/api/auth/users', (req, res) => {
     res.json(state.users.map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: u.active })));
 });
 
-app.post('/api/auth/users', (req, res) => {
+app.post('/api/auth/users', async (req, res) => {
     const { name, username, password, role } = req.body;
     if (!name || !username || !password) return res.status(400).json({ error: 'name, username, password required' });
     if (state.users.find(u => u.username === username)) return res.status(409).json({ error: 'Username already exists' });
     const user = { id: 'u' + (++state._userIdCounter), name, username, password, role: role || 'dispatcher', active: true };
     state.users.push(user);
+    await db(() => User.create(user));
     res.status(201).json({ id: user.id, name: user.name, username: user.username, role: user.role, active: user.active });
 });
 
-app.put('/api/auth/users/:id', (req, res) => {
+app.put('/api/auth/users/:id', async (req, res) => {
     const user = state.users.find(u => u.id === req.params.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
     const { name, username, password, role, active } = req.body;
@@ -205,13 +230,15 @@ app.put('/api/auth/users/:id', (req, res) => {
     if (password) user.password = password;
     if (role) user.role = role;
     if (active !== undefined) user.active = active;
+    await db(() => User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true }));
     res.json({ id: user.id, name: user.name, username: user.username, role: user.role, active: user.active });
 });
 
-app.delete('/api/auth/users/:id', (req, res) => {
+app.delete('/api/auth/users/:id', async (req, res) => {
     const idx = state.users.findIndex(u => u.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     state.users.splice(idx, 1);
+    await db(() => User.findOneAndDelete({ id: req.params.id }));
     res.json({ ok: true });
 });
 
@@ -247,7 +274,6 @@ app.get('/api/health', (_req, res) => res.json({
 io.on('connection', (socket) => {
     console.log(`🔌 Client connected: ${socket.id}`);
 
-    // Send initial state to new client
     socket.emit('init', {
         workers: state.workers,
         zones: state.zones,
@@ -256,30 +282,58 @@ io.on('connection', (socket) => {
         shiftLog: state.shiftLog,
     });
 
-    // Handle GPS push from mobile PWA
-    socket.on('location:push', ({ workerId, lat, lng, speed }) => {
+    socket.on('location:push', async ({ workerId, lat, lng, speed }) => {
         const w = state.workers.find(w => w.id === workerId);
         if (!w) return;
         w.lat = lat; w.lng = lng; w.speed = speed || 0;
         w.trail.push([lat, lng]);
         if (w.trail.length > 60) w.trail.shift();
         state.addLocation(workerId, lat, lng, speed || 0);
+        await db(() => Worker.findOneAndUpdate({ id: workerId }, { lat, lng, speed: speed || 0, trail: w.trail }));
         checkBreach(w, state.zones, io, state);
+        io.emit('workers:update', state.workers);
     });
 
     socket.on('disconnect', () => console.log(`🔌 Client disconnected: ${socket.id}`));
 });
 
-// ── Start Services ──────────────────────────────────────────
-const PORT = parseInt(process.env.PORT) || 3001;
+// ── Bootstrap: Load DB → seed state → start services ───────
+async function bootstrap() {
+    const PORT = parseInt(process.env.PORT) || 3001;
+    const ok = await connectDB().catch(() => false);
+    state.dbAvailable = !!ok;
 
-connectDB().then(ok => {
-    state.dbAvailable = ok;
-}).catch(() => {
-    state.dbAvailable = false;
-}).finally(() => {
+    if (state.dbAvailable) {
+        // ── Load persisted data into in-memory state ──────────
+        const [dbZones, dbWorkers, dbUsers, dbShifts, dbAlerts] = await Promise.all([
+            Zone.find().lean(),
+            Worker.find().lean(),
+            User.find().lean(),
+            Shift.find().lean(),
+            Alert.find().sort({ ts: -1 }).limit(500).lean(),
+        ]);
+
+        if (dbZones.length) state.zones = dbZones;
+        if (dbWorkers.length) state.workers = dbWorkers.map(w => ({ ...w, trail: w.trail || [], breaching: w.breaching || false }));
+        if (dbUsers.length) state.users = dbUsers;
+        if (dbAlerts.length) state.alerts = dbAlerts;
+
+        if (dbShifts.length) {
+            state.shifts = dbShifts.map(s => ({ workerId: s.workerId, active: s.active, startTime: s.startTime, breachCount: s.breachCount }));
+            state.shiftLog = dbShifts.flatMap(s => s.log || []).sort((a, b) => new Date(b.start) - new Date(a.start));
+        }
+
+        // ── Seed default data if DB is empty ──────────────────
+        if (!dbZones.length) await Zone.insertMany(state.zones);
+        if (!dbWorkers.length) await Worker.insertMany(state.workers);
+        if (!dbUsers.length) await User.insertMany(state.users);
+
+        console.log(`📦 Loaded from DB — ${state.workers.length} workers, ${state.zones.length} zones, ${state.users.length} users`);
+    }
+
     startSimulator(io, state);
     startGpsServer(io, state);
+
     server.listen(PORT, () => {
         console.log('');
         console.log('╔═══════════════════════════════════════╗');
@@ -287,8 +341,10 @@ connectDB().then(ok => {
         console.log(`║  📡  API: http://localhost:${PORT}        ║`);
         console.log(`║  🌐  App: http://localhost:${PORT}        ║`);
         console.log(`║  📟  TCP GPS: port ${process.env.GPS_TCP_PORT || 5000}              ║`);
-        console.log(`║  🗄  MongoDB: ${state.dbAvailable ? 'connected' : 'memory-only    '}     ║`);
+        console.log(`║  🗄  MongoDB: ${state.dbAvailable ? 'connected ✅    ' : 'memory-only ⚠️ '}   ║`);
         console.log('╚═══════════════════════════════════════╝');
         console.log('');
     });
-});
+}
+
+bootstrap();
