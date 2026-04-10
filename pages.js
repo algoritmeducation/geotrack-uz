@@ -139,34 +139,50 @@ function renderZones() {
     return true;
   });
 
-  grid.innerHTML = filteredZones.map(z => {
+  if (grid.children.length !== filteredZones.length || grid.dataset.q !== q || grid.dataset.f !== zoneFilter) {
+    grid.dataset.q = q; grid.dataset.f = zoneFilter;
+    grid.innerHTML = filteredZones.map(z => {
+      return `<div class="card zone-card card-hover" data-id="${z.id}">
+        <div class="zone-card-header">
+          <div class="zone-color-dot" style="background:${z.color}"></div>
+          <div class="zone-name">${z.name}</div>
+          <div class="zone-hdr-right" style="margin-left:auto; display:flex; gap:6px; align-items:center;"></div>
+        </div>
+        <div class="zone-stats">
+          <div class="zone-stat"><div class="val zc-w">0</div><div class="lbl">Workers</div></div>
+          <div class="zone-stat"><div class="val zc-o" style="color:var(--success)">0</div><div class="lbl">Online</div></div>
+          <div class="zone-stat"><div class="val zc-b" style="color:var(--danger)">0</div><div class="lbl">Breach</div></div>
+        </div>
+        <div class="worker-chips zc-c"></div>
+      </div>`;
+    }).join('');
+  }
+
+  // Targeted update
+  filteredZones.forEach((z, i) => {
+    const card = grid.children[i];
+    if (!card) return;
     const zw = workers.filter(w => w.zone === z.id);
     const online = zw.filter(w => w.status === 'online').length;
     const breach = zw.filter(w => w.breaching).length;
-    const chips = zw.map(w => `
-      <div class="worker-chip ${w.breaching ? 'breach-chip' : ''}">
-        <div class="chip-dot" style="background:${w.color}"></div>${w.name.split(' ')[0]}
-      </div>`).join('');
-    return `<div class="card zone-card card-hover">
-      <div class="zone-card-header">
-        <div class="zone-color-dot" style="background:${z.color}"></div>
-        <div class="zone-name">${z.name}</div>
-        ${breach ? `<span class="badge badge-breach" style="margin-left:auto">⚠ ${breach} Breach${breach > 1 ? 'es' : ''}</span>` : ''}
-        <button class="btn btn-danger btn-sm" style="padding:4px; margin-left:${breach ? '8px' : 'auto'};" onclick="removeZone('${z.id}')" title="Delete Zone"><i data-lucide="trash-2" style="width:14px;height:14px"></i></button>
-      </div>
-      <div class="zone-stats">
-        <div class="zone-stat"><div class="val">${zw.length}</div><div class="lbl">Workers</div></div>
-        <div class="zone-stat"><div class="val" style="color:var(--success)">${online}</div><div class="lbl">Online</div></div>
-        <div class="zone-stat"><div class="val" style="color:var(--danger)">${breach}</div><div class="lbl">Breach</div></div>
-      </div>
-    </div>`;
-  }).join('');
 
-  if (grid.dataset.html === html) return; // Prevent flickering and DOM destruction!
-  grid.dataset.html = html;
+    // Header badges & buttons
+    let hdrRight = '';
+    if (breach > 0) hdrRight += `<span class="badge badge-breach">⚠ ${breach} Breach${breach > 1 ? 'es' : ''}</span>`;
+    hdrRight += `<button class="btn btn-danger btn-sm" style="padding:4px" onclick="removeZone('${z.id}')" title="Delete Zone"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg></button>`;
 
-  grid.innerHTML = html;
-  if (window.lucide) window.lucide.createIcons();
+    const divRight = card.querySelector('.zone-hdr-right');
+    if (divRight.innerHTML !== hdrRight) divRight.innerHTML = hdrRight;
+
+    card.querySelector('.zc-w').textContent = zw.length;
+    card.querySelector('.zc-o').textContent = online;
+    card.querySelector('.zc-b').textContent = breach;
+
+    const chipsHTML = zw.map(w => `<div class="worker-chip ${w.breaching ? 'breach-chip' : ''}"><div class="chip-dot" style="background:${w.color}"></div>${w.name.split(' ')[0]}</div>`).join('') || '<span style="color:var(--text3);font-size:12px">No workers assigned</span>';
+
+    const chipsDiv = card.querySelector('.zc-c');
+    if (chipsDiv.innerHTML !== chipsHTML) chipsDiv.innerHTML = chipsHTML;
+  });
 }
 
 // ────────────────────────────────────────────────
