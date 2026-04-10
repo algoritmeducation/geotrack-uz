@@ -162,6 +162,7 @@ function renderZones() {
       <div class="worker-chips">${chips || '<span style="color:var(--text3);font-size:12px">No workers assigned</span>'}</div>
     </div>`;
   }).join('');
+  if (window.lucide) window.lucide.createIcons();
 }
 
 // ────────────────────────────────────────────────
@@ -752,6 +753,7 @@ function testYandexKey() {
 
 async function removeZone(id) {
   const z = getZone(id);
+  if (!confirm(`Are you sure you want to permanently delete the zone "${z?.name}"?`)) return;
   try {
     const res = await apiRemoveZone(id);
     if (!res) throw new Error('API failed');

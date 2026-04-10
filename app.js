@@ -155,6 +155,7 @@ async function addWorker() {
 
 async function removeWorker(id) {
     const w = getWorker(id);
+    if (!confirm(`Are you sure you want to permanently delete the worker "${w?.name || id}"?`)) return;
     try {
         await apiRemoveWorker(id);
         showToast(`Removed ${w?.name || id}`, 'info');
