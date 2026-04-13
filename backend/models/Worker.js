@@ -8,6 +8,7 @@ const WorkerSchema = new mongoose.Schema({
     name: { type: String, required: true },
     role: { type: String, default: 'Field Agent' },
     phone: { type: String, default: '' },
+    imei: { type: String, default: '' },
     zone: { type: String, default: '' },
     color: { type: String, default: '#1d4ed8' },
     lat: { type: Number, default: 0 },

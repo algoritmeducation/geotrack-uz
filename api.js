@@ -7,9 +7,13 @@ const API_BASE = BACKEND_URL + '/api';
 
 // ── REST Helpers ─────────────────────────────────────────────
 async function apiFetch(path, opts = {}) {
+    const session = typeof getSession === 'function' ? getSession() : null;
+    const headers = { 'Content-Type': 'application/json', ...opts.headers };
+    if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
+
     const res = await fetch(API_BASE + path, {
-        headers: { 'Content-Type': 'application/json', ...opts.headers },
         ...opts,
+        headers,
         body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     if (!res.ok) throw new Error(`API ${path} → ${res.status}`);

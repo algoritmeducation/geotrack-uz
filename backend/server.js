@@ -23,6 +23,9 @@ const Alert = require('./models/Alert');
 const Shift = require('./models/Shift');
 const User = require('./models/User');
 
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE'] } });
@@ -30,6 +33,47 @@ const io = new Server(server, { cors: { origin: '*', methods: ['GET', 'POST', 'P
 // ── Middleware ──────────────────────────────────────────────
 app.use(cors());
 app.use(express.json());
+
+app.use((req, res, next) => {
+    if (req.method === 'POST' || req.method === 'PUT') {
+        const sanitize = (obj) => {
+            for (let k in obj) {
+                if (typeof obj[k] === 'string' && k !== 'password') {
+                    obj[k] = obj[k].replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+                } else if (typeof obj[k] === 'object' && obj[k] !== null && !Array.isArray(obj[k])) {
+                    sanitize(obj[k]);
+                }
+            }
+        };
+        if (req.body) sanitize(req.body);
+    }
+    next();
+});
+
+const JWT_SECRET = process.env.JWT_SECRET || 'geotrack_super_secret';
+const unprotectedRoutes = ['/api/auth/login', '/api/locations/push', '/api/health'];
+
+app.use('/api', (req, res, next) => {
+    if (unprotectedRoutes.includes(req.path)) return next();
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+        const token = authHeader.split(' ')[1];
+        jwt.verify(token, JWT_SECRET, (err, user) => {
+            if (err) return res.status(403).json({ error: 'Forbidden' });
+            req.user = user;
+            next();
+        });
+    } else {
+        res.status(401).json({ error: 'Unauthorized' });
+    }
+});
+
+const requireRole = (role) => (req, res, next) => {
+    if (!req.user || req.user.role !== role) {
+        return res.status(403).json({ error: 'Access denied for your role' });
+    }
+    next();
+};
 
 // ── Serve frontend ─────────────────────────────────────────
 app.use(express.static(path.join(__dirname, '..')));
@@ -73,7 +117,7 @@ app.put('/api/workers/:id', async (req, res) => {
     res.json(w);
 });
 
-app.delete('/api/workers/:id', async (req, res) => {
+app.delete('/api/workers/:id', requireRole('admin'), async (req, res) => {
     const idx = state.workers.findIndex(w => w.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     const [w] = state.workers.splice(idx, 1);
@@ -112,7 +156,7 @@ app.post('/api/zones', async (req, res) => {
     res.status(201).json(z);
 });
 
-app.delete('/api/zones/:id', async (req, res) => {
+app.delete('/api/zones/:id', requireRole('admin'), async (req, res) => {
     const idx = state.zones.findIndex(z => z.id === req.params.id);
     if (idx === -1) return res.status(404).json({ error: 'Not found' });
     const [z] = state.zones.splice(idx, 1);
@@ -203,9 +247,9 @@ app.post('/api/shifts/end', async (req, res) => {
 // Auth
 app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
-    const user = state.users.find(u => u.username === username && u.password === password && u.active);
-    if (!user) return res.status(401).json({ error: 'Invalid credentials or inactive account' });
-    const token = Buffer.from(`${user.id}:${Date.now()}`).toString('base64');
+    const user = state.users.find(u => u.username === username && u.active);
+    if (!user || !bcrypt.compareSync(password, user.password)) return res.status(401).json({ error: 'Invalid credentials or inactive account' });
+    const token = jwt.sign({ id: user.id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
     res.json({ token, user: { id: user.id, name: user.name, username: user.username, role: user.role } });
 });
 
@@ -217,7 +261,7 @@ app.post('/api/auth/users', async (req, res) => {
     const { name, username, password, role } = req.body;
     if (!name || !username || !password) return res.status(400).json({ error: 'name, username, password required' });
     if (state.users.find(u => u.username === username)) return res.status(409).json({ error: 'Username already exists' });
-    const user = { id: 'u' + (++state._userIdCounter), name, username, password, role: role || 'dispatcher', active: true };
+    const user = { id: 'u' + (++state._userIdCounter), name, username, password: bcrypt.hashSync(password, 10), role: role || 'dispatcher', active: true };
     state.users.push(user);
     await db(() => User.create(user));
     res.status(201).json({ id: user.id, name: user.name, username: user.username, role: user.role, active: user.active });
@@ -229,10 +273,10 @@ app.put('/api/auth/users/:id', async (req, res) => {
     const { name, username, password, role, active } = req.body;
     if (name) user.name = name;
     if (username) user.username = username;
-    if (password) user.password = password;
+    if (password) user.password = bcrypt.hashSync(password, 10);
     if (role) user.role = role;
     if (active !== undefined) user.active = active;
-    await db(() => User.findOneAndUpdate({ id: req.params.id }, req.body, { new: true }));
+    await db(() => User.findOneAndUpdate({ id: req.params.id }, { name: user.name, username: user.username, password: user.password, role: user.role, active: user.active }, { new: true }));
     res.json({ id: user.id, name: user.name, username: user.username, role: user.role, active: user.active });
 });
 
@@ -320,6 +364,16 @@ async function bootstrap() {
         if (dbUsers.length) state.users = dbUsers;
         if (dbAlerts.length) state.alerts = dbAlerts;
 
+        // Hash plaintext seeds if needed
+        for (let u of state.users) {
+            if (!u.password.startsWith('$2')) {
+                u.password = bcrypt.hashSync(u.password, 10);
+                if (dbUsers.length) {
+                    await User.updateOne({ id: u.id }, { password: u.password });
+                }
+            }
+        }
+
         if (dbShifts.length) {
             state.shifts = dbShifts.map(s => ({ workerId: s.workerId, active: s.active, startTime: s.startTime, breachCount: s.breachCount }));
             state.shiftLog = dbShifts.flatMap(s => s.log || []).sort((a, b) => new Date(b.start) - new Date(a.start));
@@ -335,6 +389,24 @@ async function bootstrap() {
 
     startSimulator(io, state);
     startGpsServer(io, state);
+
+    // Heartbeat timeout for offline worker detection
+    setInterval(() => {
+        const now = Date.now();
+        let changed = false;
+        state.workers.forEach(w => {
+            if (w.status === 'online') {
+                const hist = state.locationHistory[w.id];
+                const lastTs = (hist && hist.length) ? hist[hist.length - 1].ts : 0;
+                // If lastTs is more than 60s ago
+                if (lastTs > 0 && now - lastTs > 60000) {
+                    w.status = 'offline';
+                    changed = true;
+                }
+            }
+        });
+        if (changed) io.emit('workers:update', state.workers);
+    }, 15000);
 
     server.listen(PORT, () => {
         console.log('');

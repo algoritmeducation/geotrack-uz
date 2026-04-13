@@ -63,7 +63,7 @@ async function attemptLogin(username, password) {
     err.style.display = 'none';
 
     try {
-        const res = await fetch('http://localhost:3001/api/auth/login', {
+        const res = await fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
@@ -121,16 +121,23 @@ function bootAuth() {
 
 // ── User Management API helpers (for Settings page) ──────────
 async function fetchSystemUsers() {
-    const res = await fetch('http://localhost:3001/api/auth/users');
+    const session = getSession();
+    const headers = session?.token ? { 'Authorization': `Bearer ${session.token}` } : {};
+    const res = await fetch('/api/auth/users', { headers });
     return res.json();
 }
 async function createSystemUser(data) {
-    const res = await fetch('http://localhost:3001/api/auth/users', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data)
+    const session = getSession();
+    const headers = { 'Content-Type': 'application/json' };
+    if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
+    const res = await fetch('/api/auth/users', {
+        method: 'POST', headers, body: JSON.stringify(data)
     });
     if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     return res.json();
 }
 async function deleteSystemUser(id) {
-    await fetch(`http://localhost:3001/api/auth/users/${id}`, { method: 'DELETE' });
+    const session = getSession();
+    const headers = session?.token ? { 'Authorization': `Bearer ${session.token}` } : {};
+    await fetch(`/api/auth/users/${id}`, { method: 'DELETE', headers });
 }

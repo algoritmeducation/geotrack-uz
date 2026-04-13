@@ -13,11 +13,15 @@ export default function TrackerScreen() {
   const [workerId, setWorkerId] = useState('');
   const [isTracking, setIsTracking] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [socketConnected, setSocketConnected] = useState(false);
 
   useEffect(() => {
     // 1. Connect WebSocket
     const s = io(BACKEND_URL, { transports: ['websocket', 'polling'] });
     setSocket(s);
+
+    s.on('connect', () => setSocketConnected(true));
+    s.on('disconnect', () => setSocketConnected(false));
 
     // 2. Load saved worker ID
     AsyncStorage.getItem('workerId').then(id => {
@@ -96,6 +100,9 @@ export default function TrackerScreen() {
           ✅ Background GPS active. Locations are being synced.
         </Text>
       )}
+      <Text style={[styles.statusText, { marginTop: 12, color: socketConnected ? '#059669' : '#ef4444' }]}>
+        {socketConnected ? '🟢 Connected to Server' : '🔴 Server Disconnected (Reconnecting…)'}
+      </Text>
     </View>
   );
 }

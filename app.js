@@ -8,14 +8,28 @@ async function sendSms(phone) {
         showToast('Worker has no phone number configured!', 'breach');
         return;
     }
-    const msg = prompt(`SMS to ${phone}:`, 'Please return to your assigned zone immediately.');
+    const modalPhone = document.getElementById('sms-phone');
+    const modalMsg = document.getElementById('sms-msg');
+
+    if (modalPhone) modalPhone.value = phone;
+    if (modalMsg) modalMsg.value = 'Please return to your assigned zone immediately.';
+    openModal('smsModal');
+}
+
+async function submitSms() {
+    const phone = document.getElementById('sms-phone').value;
+    const msg = document.getElementById('sms-msg').value.trim();
     if (!msg) return;
 
+    closeModal();
     showToast('Sending SMS…', 'info');
     try {
         const r = await fetch('/api/sms/send', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${getSession().token}`
+            },
             body: JSON.stringify({ phone, message: msg })
         });
         const data = await r.json();

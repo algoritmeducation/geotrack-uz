@@ -33,6 +33,7 @@ function startSimulator(io, state) {
             w.speed = Math.min(80, Math.max(2, moveDist * 3 + (Math.random() - 0.5) * 10));
 
             // Battery drain
+            const prevBattery = w.battery;
             w.battery = Math.max(0, w.battery - 0.012);
 
             // Trail (last 60 points)
@@ -43,7 +44,7 @@ function startSimulator(io, state) {
             state.addLocation(w.id, w.lat, w.lng, w.speed);
 
             // Battery alert (at threshold crossings ≈20%)
-            if (Math.floor(w.battery) === 20 && w.battery > 19.8) {
+            if (prevBattery >= 20 && w.battery < 20) {
                 const alert = state.newAlert('battery', w.id, w.zone, `${w.name} — Battery critical: ${Math.floor(w.battery)}%`);
                 io.emit('new_alert', alert);
             }

@@ -645,6 +645,19 @@
     </div>
   </div>
 
+  <div class="modal" id="smsModal">
+    <div class="modal-header"><span class="modal-title">Send SMS</span><button class="wdc-close"
+        onclick="closeModal()">✕</button></div>
+    <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" id="sms-phone"
+        readonly></div>
+    <div class="form-group" style="margin-top:10px"><label class="form-label">Message</label><textarea
+        class="form-input" id="sms-msg" style="height:80px;resize:vertical;"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitSms()">Send SMS</button>
+    </div>
+  </div>
+
   <!-- Toast container -->
   <div id="toastContainer" class="toast-container"></div>
 
