@@ -127,8 +127,8 @@ function connectSocket() {
     socket.on('zone:removed', (id) => { const i = zones.findIndex(z => z.id === id); if (i >= 0) zones.splice(i, 1); });
 
     // ── Shifts ──
-    socket.on('shift:started', (sh) => { const i = shifts.findIndex(s => s.workerId === sh.workerId); if (i >= 0) shifts[i] = sh; else shifts.push(sh); });
-    socket.on('shift:ended', ({ sh, log }) => { const i = shifts.findIndex(s => s.workerId === sh.workerId); if (i >= 0) shifts[i] = sh; shiftLog.unshift(log); });
+    socket.on('shift:started', (sh) => { const i = shifts.findIndex(s => s.workerId === sh.workerId); if (i >= 0) shifts[i] = sh; else shifts.push(sh); if (state.currentPage === 'shifts') renderShifts(); });
+    socket.on('shift:ended', ({ sh, log }) => { const i = shifts.findIndex(s => s.workerId === sh.workerId); if (i >= 0) shifts[i] = sh; shiftLog.unshift(log); if (state.currentPage === 'shifts') renderShifts(); });
 
     // ── Alerts cleared ──
     socket.on('alerts:cleared', () => { alerts.length = 0; state.newAlerts = 0; updateAlertBadge(); if (state.currentPage === 'alerts') renderAlerts(); });
