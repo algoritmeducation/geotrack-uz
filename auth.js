@@ -63,7 +63,7 @@ async function attemptLogin(username, password) {
     err.style.display = 'none';
 
     try {
-        const res = await fetch('/api/auth/login', {
+        const res = await fetch(API_BASE + '/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username, password })
@@ -123,14 +123,14 @@ function bootAuth() {
 async function fetchSystemUsers() {
     const session = getSession();
     const headers = session?.token ? { 'Authorization': `Bearer ${session.token}` } : {};
-    const res = await fetch('/api/auth/users', { headers });
+    const res = await fetch(API_BASE + '/auth/users', { headers });
     return res.json();
 }
 async function createSystemUser(data) {
     const session = getSession();
     const headers = { 'Content-Type': 'application/json' };
     if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
-    const res = await fetch('/api/auth/users', {
+    const res = await fetch(API_BASE + '/auth/users', {
         method: 'POST', headers, body: JSON.stringify(data)
     });
     if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
@@ -139,5 +139,5 @@ async function createSystemUser(data) {
 async function deleteSystemUser(id) {
     const session = getSession();
     const headers = session?.token ? { 'Authorization': `Bearer ${session.token}` } : {};
-    await fetch(`/api/auth/users/${id}`, { method: 'DELETE', headers });
+    await fetch(`${API_BASE}/auth/users/${id}`, { method: 'DELETE', headers });
 }
