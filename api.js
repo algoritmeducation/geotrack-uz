@@ -2,7 +2,7 @@
 //  GeoTrack UZ — Frontend API & Socket.IO Client
 // ============================================================
 // Explicitly point to the Render backend (since frontend is on Vercel)
-const BACKEND_URL = 'https://geotrack-uz.onrender.com';
+const BACKEND_URL = 'http://localhost:3001';
 const API_BASE = BACKEND_URL + '/api';
 
 // ── REST Helpers ─────────────────────────────────────────────
@@ -16,7 +16,12 @@ async function apiFetch(path, opts = {}) {
         headers,
         body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
-    if (!res.ok) throw new Error(`API ${path} → ${res.status}`);
+    if (!res.ok) {
+        if (res.status === 401 && typeof logout === 'function') {
+            logout();
+        }
+        throw new Error(`API ${path} → ${res.status}`);
+    }
     return res.json();
 }
 const API = {

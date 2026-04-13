@@ -71,7 +71,7 @@ async function attemptLogin(username, password) {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Login failed');
 
-        saveSession(data.user);
+        saveSession({ ...data.user, token: data.token });
         showApp(data.user);
     } catch (e) {
         err.textContent = e.message;

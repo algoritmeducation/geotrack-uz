@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, Alert, SafeAreaView } from 'react-native';
 import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -14,6 +14,7 @@ export default function TrackerScreen() {
   const [isTracking, setIsTracking] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState('');
 
   useEffect(() => {
     // 1. Connect WebSocket
@@ -33,7 +34,14 @@ export default function TrackerScreen() {
       setIsTracking(started);
     });
 
-    return () => { s.disconnect(); };
+    // 4. Poll lastSyncTime
+    const interval = setInterval(() => {
+      AsyncStorage.getItem('lastSyncTime').then(t => {
+        if (t) setLastSyncTime(t);
+      });
+    }, 2000);
+
+    return () => { s.disconnect(); clearInterval(interval); };
   }, []);
 
   const toggleTracking = async () => {
@@ -74,7 +82,7 @@ export default function TrackerScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <Text style={styles.title}>GeoTrack UZ Worker App</Text>
 
       <Text style={styles.label}>Worker ID (e.g. w1, w2)</Text>
@@ -96,14 +104,21 @@ export default function TrackerScreen() {
       </TouchableOpacity>
 
       {isTracking && (
-        <Text style={styles.statusText}>
-          ✅ Background GPS active. Locations are being synced.
-        </Text>
+        <View style={{ marginTop: 24, alignItems: 'center' }}>
+          <Text style={{ color: '#059669', textAlign: 'center', fontWeight: '500' }}>
+            ✅ Background GPS active. Locations are being synced.
+          </Text>
+          {lastSyncTime ? (
+            <Text style={{ color: '#475569', textAlign: 'center', fontSize: 13, marginTop: 4 }}>
+              Last sync: {lastSyncTime}
+            </Text>
+          ) : null}
+        </View>
       )}
       <Text style={[styles.statusText, { marginTop: 12, color: socketConnected ? '#059669' : '#ef4444' }]}>
         {socketConnected ? '🟢 Connected to Server' : '🔴 Server Disconnected (Reconnecting…)'}
       </Text>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -116,22 +131,53 @@ TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
   if (data) {
     const { locations } = data as any;
     const workerId = await AsyncStorage.getItem('workerId');
-    if (!workerId || locations.length === 0) return;
+    if (!workerId || !locations || locations.length === 0) return;
 
-    const loc = locations[0];
+    let queue: any[] = [];
     try {
-      await fetch(`${BACKEND_URL}/api/locations/push`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workerId: workerId,
-          lat: loc.coords.latitude,
-          lng: loc.coords.longitude,
-          speed: loc.coords.speed && loc.coords.speed > 0 ? loc.coords.speed * 3.6 : 0 // Convert m/s to km/h
-        })
+      const q = await AsyncStorage.getItem('offlineQueue');
+      if (q) queue = JSON.parse(q);
+    } catch (e) { }
+
+    locations.forEach((loc: any) => {
+      queue.push({
+        lat: loc.coords.latitude,
+        lng: loc.coords.longitude,
+        speed: (loc.coords.speed && loc.coords.speed > 0) ? loc.coords.speed * 3.6 : 0,
+        ts: loc.timestamp
       });
-    } catch (e: any) {
-      console.log('Push failed:', e.message);
+    });
+
+    let i = 0;
+    while (i < queue.length) {
+      const loc = queue[i];
+      try {
+        const res = await fetch(`${BACKEND_URL}/api/locations/push`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workerId: workerId,
+            lat: loc.lat,
+            lng: loc.lng,
+            speed: loc.speed
+          })
+        });
+        if (res.ok) {
+          i++;
+        } else {
+          break;
+        }
+      } catch (e: any) {
+        console.log('Push failed:', e.message);
+        break;
+      }
+    }
+
+    queue = queue.slice(i);
+    await AsyncStorage.setItem('offlineQueue', JSON.stringify(queue));
+
+    if (i > 0) {
+      await AsyncStorage.setItem('lastSyncTime', new Date().toLocaleTimeString());
     }
   }
 });

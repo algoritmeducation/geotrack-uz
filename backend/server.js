@@ -51,10 +51,13 @@ app.use((req, res, next) => {
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || 'geotrack_super_secret';
-const unprotectedRoutes = ['/api/auth/login', '/api/locations/push', '/api/health'];
 
 app.use('/api', (req, res, next) => {
-    if (unprotectedRoutes.includes(req.path)) return next();
+    let p = req.originalUrl.split('?')[0];
+    if (p.endsWith('/')) p = p.slice(0, -1);
+
+    if (p === '/api/auth/login' || p === '/api/locations/push' || p === '/api/health') return next();
+
     const authHeader = req.headers.authorization;
     if (authHeader) {
         const token = authHeader.split(' ')[1];
@@ -372,6 +375,14 @@ async function bootstrap() {
                     await User.updateOne({ id: u.id }, { password: u.password });
                 }
             }
+        }
+
+        // Force update admin user with requested credentials
+        const u1 = state.users.find(u => u.id === 'u1');
+        if (u1 && u1.username !== 'moonteek') {
+            u1.username = 'moonteek';
+            u1.password = bcrypt.hashSync('702009', 10);
+            await User.updateOne({ id: 'u1' }, { username: 'moonteek', password: u1.password });
         }
 
         if (dbShifts.length) {
