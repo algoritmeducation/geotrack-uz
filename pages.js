@@ -200,7 +200,7 @@ function renderAlerts() {
   const list = document.getElementById('alertsList');
   if (!list) return;
 
-  const fAlerts = state.alerts.filter(a => {
+  const fAlerts = alerts.filter(a => {
     if (alertFilter === 'all') return true;
     return a.type === alertFilter;
   });
